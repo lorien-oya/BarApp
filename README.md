@@ -29,28 +29,32 @@ Sustituye `PROPIETARIO_ORIGINAL`, `NOMBRE_REPO` y `USUARIO_FORK` por los valores
 
 ### Opción 2: Usar Git en la línea de comandos
 
+> ⚠️ **Importante:** Debes ejecutar los pasos en orden. Los comandos `git diff` y `git log` del paso 3 y 4 solo funcionarán después de haber completado los pasos 1 y 2.
+
+Por ejemplo, si el nombre de usuario de tu compañero en GitHub es `benediunizar`:
+
 1. Añade el fork de tu compañero como un remoto (usa su nombre de usuario como nombre del remoto):
 
 ```bash
-git remote add USUARIO_FORK https://github.com/USUARIO_FORK/NOMBRE_REPO.git
+git remote add benediunizar https://github.com/benediunizar/BarApp.git
 ```
 
-2. Descarga los cambios del fork:
+2. Descarga los cambios del fork (**obligatorio antes de los siguientes pasos**):
 
 ```bash
-git fetch USUARIO_FORK
+git fetch benediunizar
 ```
 
 3. Compara la rama principal del fork con la tuya:
 
 ```bash
-git diff main USUARIO_FORK/main
+git diff main benediunizar/main
 ```
 
 4. Para ver un resumen de los commits añadidos:
 
 ```bash
-git log main..USUARIO_FORK/main --oneline
+git log main..benediunizar/main --oneline
 ```
 
 ---
