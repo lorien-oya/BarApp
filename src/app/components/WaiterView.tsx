@@ -240,7 +240,7 @@ function OrderList({ profile, onLogout }: Props) {
         setShowScanner(false)
         fetchOrders()
       } else {
-        setScanError('Código incorrecto o el pedido no está listo.')
+        setScanError('Error en el código.')
       }
       return
     }
