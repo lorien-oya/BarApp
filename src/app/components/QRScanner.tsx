@@ -2,43 +2,23 @@ import { useEffect, useRef, useState } from 'react'
 import { X, Camera, CheckCircle2, Keyboard, ScanLine, AlertCircle } from 'lucide-react'
 
 interface Props {
-  onScan: (data: string) => void
+  onScan: (data: string) => Promise<boolean>
   onClose: () => void
   externalError?: string
 }
 
+type ScanState = 'idle' | 'processing' | 'success'
+
 export default function QRScanner({ onScan, onClose, externalError }: Props) {
-  const [scannedData, setScannedData] = useState<string | null>(null)
+  const [scanState, setScanState] = useState<ScanState>('idle')
   const [manualCode, setManualCode] = useState('')
   const [manualError, setManualError] = useState('')
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraError, setCameraError] = useState(false)
+
   const scannerRef = useRef<any>(null)
   const containerId = useRef('qr-reader-' + Date.now())
-
-  const startCamera = async () => {
-    setCameraError(false)
-    try {
-      const { Html5Qrcode } = await import('html5-qrcode')
-      const scanner = new Html5Qrcode(containerId.current)
-      scannerRef.current = scanner
-
-      await scanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText: string) => {
-          setScannedData(decodedText)
-          scanner.stop().catch(() => {})
-          onScan(decodedText)
-        },
-        () => {}
-      )
-      setCameraActive(true)
-    } catch {
-      setCameraError(true)
-      setCameraActive(false)
-    }
-  }
+  const processingRef = useRef(false)
 
   const stopCamera = () => {
     if (scannerRef.current) {
@@ -46,6 +26,46 @@ export default function QRScanner({ onScan, onClose, externalError }: Props) {
       scannerRef.current = null
     }
     setCameraActive(false)
+  }
+
+  const startCamera = async () => {
+    if (scanState !== 'idle') return
+    setCameraError(false)
+    setCameraActive(true)
+    try {
+      const { Html5Qrcode } = await import('html5-qrcode')
+      const scanner = new Html5Qrcode(containerId.current)
+      scannerRef.current = scanner
+
+      // Sin `qrbox` para que no aparezca el recuadro interior.
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10 },
+        async (decodedText: string) => {
+          if (processingRef.current) return
+          processingRef.current = true
+          setScanState('processing')
+          stopCamera()
+
+          try {
+            const ok = await onScan(decodedText)
+            if (ok) {
+              setScanState('success')
+              return
+            }
+          } catch {
+            setCameraError(true)
+          }
+
+          processingRef.current = false
+          setScanState('idle')
+        },
+        () => {}
+      )
+    } catch {
+      setCameraError(true)
+      setCameraActive(false)
+    }
   }
 
   useEffect(() => {
@@ -56,16 +76,33 @@ export default function QRScanner({ onScan, onClose, externalError }: Props) {
     }
   }, [])
 
-  const handleManualSubmit = (e: React.FormEvent) => {
+  const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (scanState !== 'idle') return
+
     const code = manualCode.trim().toUpperCase()
     if (!code) {
       setManualError('Introduce un código')
       return
     }
+
     setManualError('')
+    processingRef.current = true
+    setScanState('processing')
     stopCamera()
-    onScan(`MANUAL:${code}`)
+
+    try {
+      const ok = await onScan(`MANUAL:${code}`)
+      if (ok) {
+        setScanState('success')
+        return
+      }
+    } catch {
+      // el error puede mostrarse desde `externalError`
+    }
+
+    processingRef.current = false
+    setScanState('idle')
   }
 
   return (
@@ -86,20 +123,22 @@ export default function QRScanner({ onScan, onClose, externalError }: Props) {
 
       {/* Contenido */}
       <div className="flex-1 flex flex-col items-center justify-center p-4 gap-6">
-        {scannedData ? (
+        {scanState === 'processing' ? (
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+            <p className="text-white text-lg font-medium">Verificando pedido...</p>
+            <p className="text-gray-400 text-sm mt-2">Espera un momento</p>
+          </div>
+        ) : scanState === 'success' ? (
           <div className="text-center">
             <CheckCircle2 className="w-20 h-20 text-green-400 mx-auto mb-4" />
-            <p className="text-white text-lg font-medium">
-              ¡Pedido verificado correctamente!
-            </p>
-            <p className="text-gray-400 text-sm mt-2">
-              El pedido ha sido marcado como completado
-            </p>
+            <p className="text-white text-lg font-medium">¡Éxito!</p>
+            <p className="text-gray-400 text-sm mt-2">El pedido ha sido marcado como completado</p>
             <button
               onClick={() => { stopCamera(); onClose() }}
               className="mt-6 bg-white/10 hover:bg-white/20 text-white px-6 py-2.5 rounded-xl font-medium transition"
             >
-              Volver
+              Volver al panel de pedidos
             </button>
           </div>
         ) : (
@@ -148,10 +187,15 @@ export default function QRScanner({ onScan, onClose, externalError }: Props) {
 
             {/* Botón para activar cámara / Cámara activa */}
             <div className="w-full max-w-sm">
+              <style>{`
+                #${containerId.current} [id^="qr-shaded-region"] { display: none !important; }
+                #${containerId.current} .qr-shaded-region { display: none !important; }
+                #${containerId.current} video { width: 100% !important; height: 100% !important; object-fit: cover !important; }
+              `}</style>
               {/* Div contenedor del scanner - siempre en el DOM */}
               <div
                 id={containerId.current}
-                className={`rounded-2xl overflow-hidden ${cameraActive ? '' : 'hidden'}`}
+                className={`relative w-full aspect-square bg-black rounded-2xl overflow-hidden ${cameraActive ? '' : 'hidden'}`}
               ></div>
 
               {cameraActive ? (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../utils/supabase'
-import { Clock, ChefHat, CheckCircle, Package, QrCode } from 'lucide-react'
+import { Clock, ChefHat, CheckCircle, Package, QrCode, ChevronDown, ChevronUp } from 'lucide-react'
 import QRCode from 'qrcode'
 import type { Order } from '../types'
 
@@ -36,6 +36,7 @@ export default function OrderHistory({ userId }: Props) {
   const [loading, setLoading] = useState(true)
   const [qrImages, setQrImages] = useState<Record<string, string>>({})
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
+  const [showCompleted, setShowCompleted] = useState(false)
 
   const fetchOrders = useCallback(async () => {
     const { data, error } = await supabase
@@ -93,115 +94,143 @@ export default function OrderHistory({ userId }: Props) {
     )
   }
 
+  const activeOrders = orders.filter((o) => o.status !== 'completed')
+  const completedOrders = orders.filter((o) => o.status === 'completed')
+
+  const renderOrder = (order: Order) => {
+    const config = STATUS_CONFIG[order.status]
+    const StatusIcon = config.icon
+
+    return (
+      <div
+        key={order.id}
+        className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+      >
+        <button
+          onClick={() => toggleOrder(order.id)}
+          className="w-full p-4 text-left"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-400">
+              {new Date(order.created_at).toLocaleString('es-ES')}
+            </span>
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${config.color}`}
+            >
+              <StatusIcon className="w-3.5 h-3.5" />
+              {config.label}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-gray-800">Pedido #{order.pickup_code}</p>
+            <span className="text-lg font-bold text-primary-600">
+              {order.total.toFixed(2)}€
+            </span>
+          </div>
+        </button>
+
+        {expandedOrder === order.id && (
+          <div className="border-t border-gray-100 p-4">
+            {order.items && order.items.length > 0 ? (
+              <div className="space-y-2">
+                {(() => {
+                  const menuItems = order.items!.filter((i) => i.menu_item_id)
+                  const ingredientItems = order.items!.filter((i) => i.ingredient_id)
+                  return (
+                    <>
+                      {menuItems.map((item) => (
+                        <div key={item.id} className="flex justify-between text-sm">
+                          <span className="text-gray-600">
+                            {item.quantity}x {item.menu_item?.name || 'Producto'}
+                          </span>
+                          <span className="text-gray-800 font-medium">
+                            {(item.price * item.quantity).toFixed(2)}€
+                          </span>
+                        </div>
+                      ))}
+                      {ingredientItems.length > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">
+                            🧪 {ingredientItems.map((i) => i.ingredient?.name || 'Ingrediente').join(' + ')}
+                          </span>
+                          <span className="text-gray-800 font-medium">
+                            {ingredientItems.reduce((sum, i) => sum + i.price * i.quantity, 0).toFixed(2)}€
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 text-center">Sin productos</p>
+            )}
+
+            {order.status === 'ready' && (
+              <div className="mt-4 text-center p-4 bg-green-50 rounded-xl border border-green-200">
+                <p className="text-sm font-medium text-green-700 mb-3 flex items-center justify-center gap-2">
+                  <QrCode className="w-5 h-5" />
+                  ¡Tu pedido está listo! Muestra este código
+                </p>
+                {qrImages[order.id] && (
+                  <img
+                    src={qrImages[order.id]}
+                    alt="Código QR del pedido"
+                    className="mx-auto rounded-lg"
+                  />
+                )}
+                <p className="mt-3 text-2xl font-bold text-green-800 tracking-widest">
+                  {order.pickup_code}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div>
       <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">📜 Mis Pedidos</h2>
 
-      <div className="space-y-4">
-        {orders.map((order) => {
-          const config = STATUS_CONFIG[order.status]
-          const StatusIcon = config.icon
-
-          return (
-            <div
-              key={order.id}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
-            >
-              <button
-                onClick={() => toggleOrder(order.id)}
-                className="w-full p-4 text-left"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-gray-400">
-                    {new Date(order.created_at).toLocaleString('es-ES')}
-                  </span>
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${config.color}`}
-                  >
-                    <StatusIcon className="w-3.5 h-3.5" />
-                    {config.label}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-gray-800">
-                      Pedido #{order.pickup_code}
-                    </p>
-                  </div>
-                  <span className="text-lg font-bold text-primary-600">
-                    {order.total.toFixed(2)}€
-                  </span>
-                </div>
-              </button>
-
-              {/* Detalles expandidos */}
-              {expandedOrder === order.id && (
-                <div className="border-t border-gray-100 p-4">
-                  {order.items && order.items.length > 0 ? (
-                    <div className="space-y-2">
-                      {(() => {
-                        const menuItems = order.items!.filter((i) => i.menu_item_id)
-                        const ingredientItems = order.items!.filter((i) => i.ingredient_id)
-                        return (
-                          <>
-                            {menuItems.map((item) => (
-                              <div
-                                key={item.id}
-                                className="flex justify-between text-sm"
-                              >
-                                <span className="text-gray-600">
-                                  {item.quantity}x{' '}
-                                  {item.menu_item?.name || 'Producto'}
-                                </span>
-                                <span className="text-gray-800 font-medium">
-                                  {(item.price * item.quantity).toFixed(2)}€
-                                </span>
-                              </div>
-                            ))}
-                            {ingredientItems.length > 0 && (
-                              <div className="flex justify-between text-sm">
-                                <span className="text-gray-600">
-                                  🧪 {ingredientItems.map((i) => i.ingredient?.name || 'Ingrediente').join(' + ')}
-                                </span>
-                                <span className="text-gray-800 font-medium">
-                                  {ingredientItems.reduce((sum, i) => sum + i.price * i.quantity, 0).toFixed(2)}€
-                                </span>
-                              </div>
-                            )}
-                          </>
-                        )
-                      })()}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-400 text-center">Sin productos</p>
-                  )}
-
-                  {/* QR para pedidos listos */}
-                  {order.status === 'ready' && (
-                    <div className="mt-4 text-center p-4 bg-green-50 rounded-xl border border-green-200">
-                      <p className="text-sm font-medium text-green-700 mb-3 flex items-center justify-center gap-2">
-                        <QrCode className="w-5 h-5" />
-                        ¡Tu pedido está listo! Muestra este código
-                      </p>
-                      {qrImages[order.id] && (
-                        <img
-                          src={qrImages[order.id]}
-                          alt="Código QR del pedido"
-                          className="mx-auto rounded-lg"
-                        />
-                      )}
-                      <p className="mt-3 text-2xl font-bold text-green-800 tracking-widest">
-                        {order.pickup_code}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
+      {/* Pedidos activos */}
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-6">
+        <h3 className="text-sm font-semibold text-blue-700 uppercase tracking-wide mb-3">
+          Pedidos activos
+        </h3>
+        {activeOrders.length === 0 ? (
+          <p className="text-sm text-blue-400 text-center py-4">No tienes pedidos en curso</p>
+        ) : (
+          <div className="space-y-3">
+            {activeOrders.map(renderOrder)}
+          </div>
+        )}
       </div>
+
+      {/* Pedidos completados */}
+      {completedOrders.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowCompleted((prev) => !prev)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <span>Ver pedidos completados ({completedOrders.length})</span>
+            {showCompleted ? (
+              <ChevronUp className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            )}
+          </button>
+
+          {showCompleted && (
+            <div className="mt-3 space-y-3">
+              {completedOrders.map(renderOrder)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

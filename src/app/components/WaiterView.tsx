@@ -229,34 +229,35 @@ function OrderList({ profile, onLogout }: Props) {
 
   const handleQRScan = async (data: string) => {
     setScanError('')
+
     // Código manual: buscar pedido por pickup_code
     if (data.startsWith('MANUAL:')) {
       const code = data.replace('MANUAL:', '')
-      const order = orders.find(
-        (o) => o.pickup_code === code && o.status === 'ready'
-      )
-      if (order) {
-        await updateOrderStatus(order.id, 'completed')
-        setShowScanner(false)
-        fetchOrders()
-      } else {
+      const order = orders.find((o) => o.pickup_code === code && o.status === 'ready')
+      if (!order) {
         setScanError('Código incorrecto o el pedido no está listo.')
+        return false
       }
-      return
+
+      await updateOrderStatus(order.id, 'completed')
+      await fetchOrders()
+      return true
     }
 
     // QR escaneado con cámara
     try {
       const parsed = JSON.parse(data)
-      if (parsed.orderId) {
-        await updateOrderStatus(parsed.orderId, 'completed')
-        setShowScanner(false)
-        fetchOrders()
-      } else {
+      if (!parsed.orderId) {
         setScanError('QR inválido.')
+        return false
       }
+
+      await updateOrderStatus(parsed.orderId, 'completed')
+      await fetchOrders()
+      return true
     } catch {
       setScanError('QR inválido.')
+      return false
     }
   }
 
@@ -305,7 +306,13 @@ function OrderList({ profile, onLogout }: Props) {
   }
 
   if (showScanner) {
-    return <QRScanner onScan={handleQRScan} onClose={() => setShowScanner(false)} externalError={scanError} />
+    return (
+      <QRScanner
+        onScan={handleQRScan}
+        onClose={() => { setShowScanner(false); setScanError('') }}
+        externalError={scanError}
+      />
+    )
   }
 
   if (selectedOrder) {
@@ -314,7 +321,7 @@ function OrderList({ profile, onLogout }: Props) {
         order={selectedOrder}
         onBack={() => setSelectedOrder(null)}
         onUpdateStatus={updateOrderStatus}
-        onOpenScanner={() => { setSelectedOrder(null); setShowScanner(true) }}
+        onOpenScanner={() => { setScanError(''); setSelectedOrder(null); setShowScanner(true) }}
       />
     )
   }
@@ -333,7 +340,7 @@ function OrderList({ profile, onLogout }: Props) {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowScanner(true)}
+              onClick={() => { setScanError(''); setSelectedOrder(null); setShowScanner(true) }}
               className="p-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition"
               title="Escanear QR"
             >
